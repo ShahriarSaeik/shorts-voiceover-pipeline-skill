@@ -1,0 +1,10 @@
+# Detached Colab render supervision
+
+Use this procedure when a long GPU pipeline is launched as a detached process with a PID file, status JSON, and log.
+
+1. Launch the remote worker once with `subprocess.Popen([...], stdout=log, stderr=log, stdin=DEVNULL, start_new_session=True)`; write its PID to a dedicated file, and let the worker update a JSON status file at each stage. Keep outputs/intermediates on Colab until final verification passes.
+2. Do not interpret `colab status -s <SESSION>` reporting `IDLE` as proof that the detached worker stopped; it reports notebook execution state, not necessarily the child process. Execute a short remote diagnostic script using `colab exec -s <SESSION> -f /tmp/check.py --timeout 15` that checks `ps -p <PID> -o pid,etime,%cpu,%mem,cmd`, reads the status JSON, and tails the stage log.
+3. Treat the PID/process table and advancing stage log as the live evidence. If the worker is active and log progress advances, continue it without relaunching. If the process is absent, inspect the final log lines, status JSON, and expected artifact before deciding whether a failed stage can be resumed; never blindly rerun the whole pipeline.
+4. Distinguish a stale status JSON from a dead worker: if the status timestamp is old but its child process is consuming GPU and the log's frame counter advances, report that the status writer is not being refreshed and use the log/process evidence. Improve future workers by emitting periodic progress updates during long subprocess stages, not only once at stage start/end.
+5. When a user asks why it is slow, answer promptly with the verified stage, observed frame count/rate, and whether the process is active. Correct any prior inaccurate status claim explicitly; do not present a guess or a stale percentage as current progress.
+6. After successful render, verify output and transfer it before stopping the session; if a stage fails, preserve useful artifacts/logs and stop the GPU session promptly under the account's quota policy.
